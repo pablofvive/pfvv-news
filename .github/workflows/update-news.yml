@@ -23,7 +23,7 @@ jobs:
 
       - name: Generar noticias.json
         env:
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TE_API_KEY: ${{ secrets.TE_API_KEY }}
         run: python generate_news_json.py
 
       - name: Commit y push si hay cambios
