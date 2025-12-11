@@ -22,7 +22,7 @@ def fetch_economic_calendar():
     date_to = (today + timedelta(days=DAYS_AHEAD)).strftime("%Y-%m-%d")
 
     url = (
-        "https://financialmodelingprep.com/api/v3/economic_calendar"
+        "https://financialmodelingprep.com/stable/economic-calendar"
         f"?from={date_from}&to={date_to}&apikey={FMP_API_KEY}"
     )
 
