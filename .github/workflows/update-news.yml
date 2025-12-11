@@ -3,7 +3,7 @@ name: Actualizar noticias económicas PFVV
 on:
   schedule:
     - cron: "0 3 * * *"   # todos los días a las 03:00 UTC
-  workflow_dispatch:       # permite ejecutarlo manualmente
+  workflow_dispatch:      # permite ejecutarlo manualmente
 
 jobs:
   update-news:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Generar noticias.json
         env:
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
         run: python generate_news_json.py
 
       - name: Commit y push si hay cambios
