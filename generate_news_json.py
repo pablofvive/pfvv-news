@@ -1,81 +1,137 @@
 import os
-import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-# 1) Tu API key de FinancialModelingPrep irá en un SECRETO de GitHub:
-FMP_API_KEY = os.environ.get("FMP_API_KEY")
+import requests
 
-# 2) Símbolos que el bot opera y que se ven afectados por noticias de USA
-PFVV_SYMBOLS = [
-    "EURUSD", "USDJPY", "GBPUSD",
-    "XAUUSD", "NAS100", "SP500",
-    "US30", "GER40"
+# ========= CONFIGURACIÓN BÁSICA =========
+
+API_KEY = os.environ.get("FINNHUB_API_KEY")
+BASE_URL = "https://finnhub.io/api/v1/calendar/economic"
+
+# Lista fija de instrumentos de tu sistema
+INSTRUMENTS = [
+    "XAUUSD",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "NAS100",
+    "SP500",
+    "US30",
+    "GER40",
 ]
 
-# 3) Rango de días a futuro que quieres cubrir
-DAYS_AHEAD = 10   # próximos 10 días
 
 def fetch_economic_calendar():
-    today = datetime.utcnow().date()
-    date_from = today.strftime("%Y-%m-%d")
-    date_to = (today + timedelta(days=DAYS_AHEAD)).strftime("%Y-%m-%d")
-
-    url = (
-        "https://financialmodelingprep.com/stable/economic-calendar"
-        f"?from={date_from}&to={date_to}&apikey={FMP_API_KEY}"
-    )
-
-    resp = requests.get(url, timeout=10)
-    resp.raise_for_status()
-    return resp.json()
-
-def to_pfvv_json(events):
     """
-    Convierte la respuesta de FMP al formato EXACTO que tu EA espera.
+    Descarga el calendario económico de Finnhub para hoy + próximos 7 días.
     """
-    result = []
+    if not API_KEY:
+        raise SystemExit("ERROR: FINNHUB_API_KEY no está definido en variables de entorno")
 
-    for ev in events:
-        # Filtrar solo USA (puedes ampliar después si quieres)
-        if ev.get("country") != "US":
+    today_utc = datetime.utcnow().date()
+    to_date = today_utc + timedelta(days=7)
+
+    params = {
+        "from": today_utc.isoformat(),
+        "to": to_date.isoformat(),
+        "token": API_KEY,
+    }
+
+    response = requests.get(BASE_URL, params=params, timeout=20)
+    response.raise_for_status()
+
+    data = response.json()
+    # Según la documentación, el array viene en economicCalendar
+    events = data.get("economicCalendar", []) or []
+    return events
+
+
+def parse_time_to_gmt5(raw_time: str) -> str | None:
+    """
+    Convierte la hora que envía Finnhub a formato 'YYYY-MM-DD HH:MM'
+    en zona horaria GMT-5 (Ecuador).
+    """
+    if not raw_time:
+        return None
+
+    # Puede venir como '2025-01-15 13:30:00' o '2025-01-15T13:30:00+00:00'
+    cleaned = raw_time.replace("T", " ")
+    cleaned = cleaned.split("+")[0].split("Z")[0].strip()
+
+    dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            dt = datetime.strptime(cleaned, fmt)
+            break
+        except ValueError:
             continue
 
-        # Filtrar solo impacto ALTO
-        impact_raw = (ev.get("impact") or "").lower()
-        if impact_raw != "high":
-            continue
+    if dt is None:
+        return None
 
-        # Fecha/hora que devuelve FMP, ejemplo "2021-10-18 21:00:00"
-        date_str = ev.get("date")
-        if not date_str:
-            continue
+    # Asumimos UTC y convertimos a GMT-5
+    dt_utc = dt.replace(tzinfo=timezone.utc)
+    dt_gmt5 = dt_utc - timedelta(hours=5)
+    return dt_gmt5.strftime("%Y-%m-%d %H:%M")
 
-        # Nos quedamos con "YYYY-MM-DD HH:MM"
-        time_gmt5 = date_str[:16]
 
-        title = ev.get("event") or "Economic event"
+def transform_event(e: dict) -> dict | None:
+    """
+    Transforma un evento de Finnhub al formato PFVV.
+    Solo mantenemos eventos de alto impacto.
+    """
+    impact_raw = (e.get("impact") or "").strip().lower()
 
-        result.append({
-            "symbols": PFVV_SYMBOLS,
-            "impact": "high",
-            "time_gmt5": time_gmt5,
-            "title": title
-        })
+    # Nos quedamos solo con eventos de alto impacto
+    if impact_raw not in ("high", "major", "importance-high"):
+        return None
 
-    return result
+    raw_time = e.get("time")
+    time_gmt5 = parse_time_to_gmt5(raw_time)
+    if not time_gmt5:
+        return None
+
+    country = (e.get("country") or "").strip()
+    title_event = (e.get("event") or "").strip()
+
+    if country and title_event:
+        title = f"{country} {title_event}"
+    else:
+        title = title_event or country or "Economic Event"
+
+    return {
+        "symbols": INSTRUMENTS,
+        "impact": impact_raw,
+        "time_gmt5": time_gmt5,
+        "title": title,
+    }
+
 
 def main():
-    if not FMP_API_KEY:
-        raise RuntimeError("Falta la API key: define FMP_API_KEY como variable de entorno.")
+    events_raw = fetch_economic_calendar()
 
-    events = fetch_economic_calendar()
-    pfvv_events = to_pfvv_json(events)
+    transformed = []
+    for e in events_raw:
+        te = transform_event(e)
+        if te is not None:
+            transformed.append(te)
 
+    # Ordenamos por fecha/hora GMT-5
+    def sort_key(ev):
+        try:
+            return datetime.strptime(ev["time_gmt5"], "%Y-%m-%d %H:%M")
+        except Exception:
+            return datetime.max
+
+    transformed.sort(key=sort_key)
+
+    # Guardamos EXACTAMENTE en noticias.json
     with open("noticias.json", "w", encoding="utf-8") as f:
-        json.dump(pfvv_events, f, ensure_ascii=False, indent=2)
+        json.dump(transformed, f, ensure_ascii=False, indent=2)
 
-    print(f"Generadas {len(pfvv_events)} noticias en noticias.json")
+    print(f"Guardados {len(transformed)} eventos en noticias.json")
+
 
 if __name__ == "__main__":
     main()
