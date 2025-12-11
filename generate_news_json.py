@@ -32,19 +32,24 @@ def fetch_economic_calendar():
     today_utc = datetime.utcnow().date()
     to_date = today_utc + timedelta(days=7)
 
+    # Parámetros SOLO con fechas (sin token)
     params = {
         "from": today_utc.isoformat(),
         "to": to_date.isoformat(),
-        "token": API_KEY,
     }
 
-    response = requests.get(BASE_URL, params=params, timeout=20)
+    # Token va en el header obligatorio
+    headers = {
+        "X-Finnhub-Token": API_KEY
+    }
+
+    response = requests.get(BASE_URL, params=params, headers=headers, timeout=20)
     response.raise_for_status()
 
     data = response.json()
-    # Según la documentación, el array viene en economicCalendar
     events = data.get("economicCalendar", []) or []
     return events
+
 
 
 def parse_time_to_gmt5(raw_time: str) -> str | None:
