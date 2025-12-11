@@ -23,32 +23,41 @@ INSTRUMENTS = [
 
 
 def fetch_economic_calendar():
+    """
+    Descarga el calendario económico desde TradingEconomics
+    para hoy + próximos 7 días.
+    """
+
+    import datetime
+    import requests
+    import os
+
+    API_KEY = os.getenv("TE_API_KEY")
     if not API_KEY:
-        raise SystemExit("ERROR: FINNHUB_API_KEY no está definido.")
+        raise SystemExit("ERROR: TE_API_KEY no está definido en los secrets de GitHub.")
 
-    # Fecha actual real del servidor GitHub Actions
-    today_utc = datetime.utcnow().date()
+    # Fechas necesarias
+    today = datetime.datetime.utcnow().date()
+    to_date = today + datetime.timedelta(days=7)
 
-    # Si la fecha cae en un año extraño, corregimos (tu caso)
-    if today_utc.year > 2024:
-        today_utc = datetime(2024, 1, 1).date()
-
-    to_date = today_utc + timedelta(days=7)
+    # Endpoint oficial TradingEconomics (calendario económico)
+    BASE_URL = f"https://api.tradingeconomics.com/calendar"
 
     params = {
-        "from": today_utc.isoformat(),
-        "to": to_date.isoformat(),
+        "d1": today.isoformat(),      # desde hoy
+        "d2": to_date.isoformat(),    # hasta 7 días
+        "c": "all",                    # todos los países (lo permite el plan FREE)
+        "client": API_KEY              # API key obligatoria
     }
 
-    headers = {
-        "X-Finnhub-Token": API_KEY
-    }
-
-    response = requests.get(BASE_URL, params=params, headers=headers, timeout=20)
+    response = requests.get(BASE_URL, params=params, timeout=20)
     response.raise_for_status()
 
     data = response.json()
-    events = data.get("economicCalendar", []) or []
+
+    # Aseguramos que siempre devolvemos lista
+    events = data if isinstance(data, list) else []
+
     return events
 
 
