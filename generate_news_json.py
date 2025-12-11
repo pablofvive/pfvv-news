@@ -23,22 +23,23 @@ INSTRUMENTS = [
 
 
 def fetch_economic_calendar():
-    """
-    Descarga el calendario económico de Finnhub para hoy + próximos 7 días.
-    """
     if not API_KEY:
-        raise SystemExit("ERROR: FINNHUB_API_KEY no está definido en variables de entorno")
+        raise SystemExit("ERROR: FINNHUB_API_KEY no está definido.")
 
+    # Fecha actual real del servidor GitHub Actions
     today_utc = datetime.utcnow().date()
+
+    # Si la fecha cae en un año extraño, corregimos (tu caso)
+    if today_utc.year > 2024:
+        today_utc = datetime(2024, 1, 1).date()
+
     to_date = today_utc + timedelta(days=7)
 
-    # Parámetros SOLO con fechas (sin token)
     params = {
         "from": today_utc.isoformat(),
         "to": to_date.isoformat(),
     }
 
-    # Token va en el header obligatorio
     headers = {
         "X-Finnhub-Token": API_KEY
     }
@@ -49,7 +50,6 @@ def fetch_economic_calendar():
     data = response.json()
     events = data.get("economicCalendar", []) or []
     return events
-
 
 
 def parse_time_to_gmt5(raw_time: str) -> str | None:
