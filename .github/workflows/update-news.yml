@@ -1,0 +1,35 @@
+name: Actualizar noticias económicas PFVV
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # todos los días a las 03:00 UTC
+  workflow_dispatch:       # permite ejecutarlo manualmente
+
+jobs:
+  update-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install requests
+
+      - name: Generar noticias.json
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: python generate_news_json.py
+
+      - name: Commit y push si hay cambios
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add noticias.json
+          git commit -m "Update economic news JSON" || echo "No changes"
+          git push
